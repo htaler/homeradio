@@ -56,6 +56,24 @@ class Playable:
 
 # ---------- URL helpers ----------
 
+def fix_mojibake(text):
+    """Python decodes HTTP headers as Latin-1, but stations send icy-name in UTF-8
+    ("CafÃ© del Mar"). Re-decode when the text round-trips; otherwise leave it alone,
+    so already-correct names ("Café", "Nowy Świat") are untouched."""
+    try:
+        return text.encode("latin-1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return text
+
+
+def decode_meta(raw: bytes):
+    """ICY metadata has no declared charset: UTF-8 if it is valid, else Latin-1."""
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw.decode("latin-1")
+
+
 def resolve_url(url, depth=0):
     """-> (stream_url, content_type, icy_name, is_audio). Unwraps .pls/.m3u, detects HLS.
     Keeps the original URL for plain streams: tokenized redirect targets expire."""
@@ -64,7 +82,7 @@ def resolve_url(url, depth=0):
     ext = Path(urllib.parse.urlparse(url).path).suffix.lower()
     with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=8) as r:
         ctype = (r.headers.get("Content-Type") or "").split(";")[0].strip().lower()
-        icy = (r.headers.get("icy-name") or "").strip()
+        icy = fix_mojibake((r.headers.get("icy-name") or "").strip())
         icy = icy if len(icy) > 1 else ""   # Radio 357 sends "-"
         is_list = ext in (".pls", ".m3u", ".m3u8") or "mpegurl" in ctype or "scpls" in ctype
         if not is_list:
@@ -146,7 +164,7 @@ def icy_title(url):
             if not metaint:
                 return None
             r.read(metaint)
-            meta = r.read(r.read(1)[0] * 16).decode("utf-8", "replace")
+            meta = decode_meta(r.read(r.read(1)[0] * 16))
         m = re.search(r"StreamTitle='(.*?)';", meta)
         return (m.group(1).strip() or None) if m else None
     except Exception:
@@ -203,9 +221,12 @@ class Catalog:
     # --- pasted stations ---
     def saved(self):
         try:
-            return json.loads(self.saved_file.read_text())
+            items = json.loads(self.saved_file.read_text())
         except Exception:
             return []
+        for s in items:     # names saved before the mojibake fix
+            s["name"] = fix_mojibake(s["name"])
+        return items
 
     def add_saved(self, url, name=None):
         url = url.strip()
