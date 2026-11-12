@@ -5,6 +5,9 @@ services:
     container_name: home-radio
     network_mode: host        # mDNS discovery + speakers must reach us directly
     restart: unless-stopped
+    logging:                  # keep the Docker log from growing forever
+      driver: json-file
+      options: { max-size: "1m", max-file: "3" }
     environment:
       - TZ=UTC                # your timezone, e.g. Europe/Berlin
     volumes:

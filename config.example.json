@@ -1,4 +1,8 @@
 {
   "listen_key": "YOUR_AUDIOADDICT_PREMIUM_LISTEN_KEY",
-  "airplay_max_volume": 80
+  "airplay_max_volume": 80,
+  "plex": {
+    "url": "http://127.0.0.1:32400",
+    "token": "YOUR_PLEX_TOKEN"
+  }
 }

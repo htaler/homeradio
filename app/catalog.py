@@ -47,10 +47,11 @@ EXT_TYPES = {".mp3": "audio/mpeg", ".aac": "audio/aac", ".m4a": "audio/mp4", ".o
 class Playable:
     """What a speaker needs to start playing."""
     name: str
-    kind: str                                  # "radio" (direct stream) | "ytdl" (needs yt-dlp)
+    kind: str                                  # "radio" | "ytdl" (needs yt-dlp) | "queue" (library tracks)
     urls: list = field(default_factory=list)   # radio: candidate stream URLs (server fallback)
     page: str = ""                             # ytdl: page URL, re-resolved on every play
     meta: tuple = ()                           # how to find the current track
+    tracks: list = field(default_factory=list) # queue: [{title, artist, album, path, input, ctype, art...}]
 
 
 # ---------- URL helpers ----------
@@ -97,6 +98,39 @@ def _ytdl_title(url):
     if info.get("is_live"):   # yt-dlp appends " 2026-11-11 16:14" to live titles
         title = re.sub(r" \d{4}-\d{2}-\d{2} \d{2}:\d{2}$", "", title)
     return title
+
+
+def ytdl_playlist(url):
+    """Flat playlist listing (titles, ids, durations) - fast, no per-video extraction."""
+    p = subprocess.run(["yt-dlp", "-J", "--flat-playlist", "--no-warnings", url],
+                       capture_output=True, text=True, timeout=120)
+    if p.returncode != 0:
+        msg = (p.stderr.strip().splitlines() or ["yt-dlp failed"])[-1]
+        raise ValueError(msg.removeprefix("ERROR: "))
+    return json.loads(p.stdout)
+
+
+def is_yt_playlist(url):
+    """A playlist-only link (YouTube Music albums are playlists). watch?v=..&list=.. stays a single video."""
+    q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+    return is_youtube(url) and "list" in q and "v" not in q
+
+
+def _playlist_name(info):
+    return re.sub(r"^Album - ", "", info.get("title") or "YouTube playlist")
+
+
+def _yt_tracks(info, album):
+    out = []
+    for e in info.get("entries") or []:
+        vid, title = e.get("id"), e.get("title") or ""
+        if not vid or title in ("[Private video]", "[Deleted video]"):
+            continue
+        artist = re.sub(r" - Topic$", "", e.get("channel") or e.get("uploader") or "")
+        out.append({"id": vid, "title": title, "artist": artist, "album": album,
+                    "duration": e.get("duration") or 0, "path": f"/yt/track/{vid}", "art": None,
+                    "ctype": "audio/mpeg", "input": f"yt:{vid}"})   # resolved lazily, per track
+    return out
 
 
 def is_youtube(url):
@@ -182,7 +216,9 @@ class Catalog:
                 if s["url"] == url:
                     return s
         entry = {"id": hashlib.sha1(url.encode()).hexdigest()[:10], "url": url}
-        if is_youtube(url):
+        if is_yt_playlist(url):
+            entry.update(kind="ytlist", name=name or _playlist_name(ytdl_playlist(url)))
+        elif is_youtube(url):
             entry.update(kind="ytdl", name=name or _ytdl_title(url))
         else:
             try:
@@ -229,6 +265,11 @@ class Catalog:
                 raise ValueError("station no longer saved")
             if s["kind"] == "ytdl":
                 return Playable(s["name"], "ytdl", page=s["url"])
+            if s["kind"] == "ytlist":
+                tracks = _yt_tracks(ytdl_playlist(s["url"]), s["name"])
+                if not tracks:
+                    raise ValueError("the playlist is empty")
+                return Playable(s["name"], "queue", tracks=tracks)
             return Playable(s["name"], "radio", urls=[s["url"]], meta=("icy",))
         raise ValueError(f"bad source {src!r}")
 

@@ -1,5 +1,5 @@
 diff --git a/src/cliraop.c b/src/cliraop.c
-index a827790..7d25107 100644
+index a827790..b88977a 100644
 --- a/src/cliraop.c
 +++ b/src/cliraop.c
 @@ -337,10 +337,24 @@ int main(int argc, char *argv[]) {
@@ -8,26 +8,45 @@ index a827790..7d25107 100644
  		if (status == PLAYING && raopcl_accept_frames(raopcl)) {
 -			n = read(infile, buf, DEFAULT_FRAMES_PER_CHUNK * 4);
 -			if (!n)	continue;
--			raopcl_send_chunk(raopcl, buf, n / 4, &playtime);
--			frames += n / 4;
-+			/* home-radio patch: a pipe may return a partial chunk; n / 4 would drop the
-+			   odd bytes and shift the 16-bit stereo stream (= loud noise). Read whole frames. */
-+			int got = 0, r = 0;
-+			while (got < DEFAULT_FRAMES_PER_CHUNK * 4 &&
-+				   (r = read(infile, buf + got, DEFAULT_FRAMES_PER_CHUNK * 4 - got)) > 0) got += r;
-+			n = got;
-+			if (n >= 4) {
-+				raopcl_send_chunk(raopcl, buf, n / 4, &playtime);
-+				frames += n / 4;
++			int r;
++
++			// a pipe may return less than requested and not a multiple of a frame: keep
++			// reading, otherwise trailing bytes are dropped by n / 4 and samples misalign
++			for (n = 0; n < DEFAULT_FRAMES_PER_CHUNK * 4; n += r) {
++				r = read(infile, buf + n, DEFAULT_FRAMES_PER_CHUNK * 4 - n);
++				if (r <= 0) break;
 +			}
-+			if (r <= 0) {
-+				/* home-radio patch: input ended - let the buffer play out, then quit (was: spin forever) */
++			if (!n) {
++				// home-radio: input ended - let the buffer play out, then disconnect and exit
 +				usleep(TS2MS(latency, raopcl_sample_rate(raopcl)) * 1000);
 +				break;
 +			}
+ 			raopcl_send_chunk(raopcl, buf, n / 4, &playtime);
+ 			frames += n / 4;
 +		} else {
-+			/* home-radio patch: the player is full - sleep instead of spinning a core at 100% */
++			// player does not accept frames yet, don't spin
 +			usleep(2000);
  		}
  
  		if (interactive && kbhit()) {
+diff --git a/src/raop_client.c b/src/raop_client.c
+index 446fbee..b896b23 100644
+--- a/src/raop_client.c
++++ b/src/raop_client.c
+@@ -739,11 +739,14 @@ struct raopcl_s *raopcl_create(struct in_addr host, uint16_t port_base, uint16_t
+ static void _raopcl_terminate_rtp(struct raopcl_s *p)
+ {
+ 	// Terminate RTP threads and close sockets
+-	if (p->ctrl_running) pthread_join(p->ctrl_thread, NULL);
++	// home-radio: clear the loop flags before joining, or the join never returns (upstream #61)
++	bool ctrl_started = p->ctrl_running, time_started = p->time_running;
++
+ 	p->ctrl_running = false;
++	if (ctrl_started) pthread_join(p->ctrl_thread, NULL);
+ 
+-	if (p->time_running) pthread_join(p->time_thread, NULL);
+ 	p->time_running = false;
++	if (time_started) pthread_join(p->time_thread, NULL);
+ 
+ 	if (p->rtp_ports.ctrl.fd != -1) closesocket(p->rtp_ports.ctrl.fd);
+ 	if (p->rtp_ports.time.fd != -1) closesocket(p->rtp_ports.time.fd);
