@@ -7,7 +7,7 @@ A small self-hosted web app that puts internet radio, your **Plex music library*
 - **Built-in stations**: Radio Paradise (Main, Mellow, Rock, Global, Serenity), Radio 357, Radio Nowy Świat.
 - **Plex albums** (optional): a separate Albums view (`/plex`) with your whole music library as a cover wall: search (diacritics-insensitive), sort, Play / Shuffle / play from a track, ⏮ ⏯ ⏭ on every speaker type. Built for libraries with thousands of albums.
 - **Plex play history**: every player reports to Plex like a Plexamp client would. Tracks show under "Now Playing" in Plex, and play counts and history stay correct.
-- **Paste any link**: a stream URL, `.pls`/`.m3u`, a YouTube video or live stream, a **YouTube / YouTube Music playlist or album** (plays as a queue), or anything else [yt-dlp](https://github.com/yt-dlp/yt-dlp) understands. Audio only, saved for one-tap replay.
+- **Paste any link**: a stream URL, `.pls`/`.m3u`, a YouTube video or live stream, a **YouTube / YouTube Music playlist or album** (plays as a queue), or anything else [yt-dlp](https://github.com/yt-dlp/yt-dlp) understands. Plays audio only. Only the **link** (and a name) is saved for one-tap replay; the audio itself is streamed each time and never downloaded or stored.
 - **Now playing**: track titles from the AudioAddict and Radio Paradise APIs, or ICY stream metadata.
 - **"This device"**: play in the browser itself. Radio streams go straight from the station to the browser, and the server only steps in for YouTube and formats the browser can't play. Lock-screen controls via the Media Session API.
 - Per-speaker volume and stop; several speakers can play different things at once.
