@@ -1,0 +1,11 @@
+services:
+  radio:
+    build: .
+    image: home-radio:1
+    container_name: home-radio
+    network_mode: host        # mDNS discovery + speakers must reach us directly
+    restart: unless-stopped
+    environment:
+      - TZ=UTC                # your timezone, e.g. Europe/Berlin
+    volumes:
+      - ./data:/data          # config.json (listen key), stations.json, state.json, cache
